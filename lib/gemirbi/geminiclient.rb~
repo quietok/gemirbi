@@ -1,0 +1,113 @@
+
+
+module Gemini
+  class GeminiClient
+    attr_accessor :tofu_db, :capem_path, :document, :cert, :ssl_context, :ssl_socket
+    
+    def initialize(ca_path='/usr/home/mouse/.gemini/ca.pem', tofu_path='/usr/home/mouse/.gemini/tofudb.yml',use_tofu=true,use_ca=false)
+      self.ssl_context = OpenSSL::SSL::SSLContext.new
+      if use_tofu
+        self.tofu_db = Gemini::TofuDB.new tofu_path
+      end
+      if use_ca
+        self.capem_path = ca_path
+        #set ca context crap
+      end
+    end
+    
+    def establish_connection(uri, port)
+      #ssl_context = #OpenSSL::SSL::SSLContext.new
+      #ssl_context = init_tofu('anal')
+      socket = TCPSocket.new(uri, port)
+      ssl_socket = OpenSSL::SSL::SSLSocket.new(socket, self.ssl_context)
+      ssl_socket.connect
+      #puts ssl_socket.cert
+      v= ssl_socket.peer_cert.subject.to_a
+      #puts thehash
+      #puts thehash["CN"] #[2..-1]
+      z= ssl_socket.peer_cert.issuer.to_a  #[2..-1]
+   
+      puts v[1]
+      puts v.index("CN")
+      #puts v[v.index("CN")+1]
+      #puts z[v.index("CN")+1]
+
+      unless ssl_socket.peer_cert.subject == ssl_socket.peer_cert.subject
+        puts 'bleh'
+      elif self.tofu_db.check_tofu(uri, ssl_socket.peer_cert)
+        self.ssl_socket = ssl_socket
+      else
+        puts 'raise_ssl_error'
+      end
+    end
+
+    def grab_data( uri)
+      self.ssl_socket.connect()
+      self.ssl_socket.puts "gemini://#{uri}/\r\n"
+      data = self.ssl_socket.readlines
+      header = data.slice!(0)
+      content = data
+      return header, content
+    end
+
+    def check_header(header)
+      header_bits = header.split(' ')
+      status = header_bits[0].to_i()
+      header_hash = {}
+      header_hash[:status_value] = status
+      case status
+      when 10
+        header_hash[:status_text] = 'INPUT'
+      when 11
+        header_hash[:status_text] = 'SENSITIVE INPUT'
+      when 20..29
+        header_hash[:status_text] = 'SUCCESS'
+      when 30
+        header_hash[:status_text] = 'REDIRECT - TEMPORARY'
+      when 31
+        header_hash[:status_text] = 'REDIRECT - PERMANENT'
+      when 40
+        header_hash[:status_text] = 'TEMPORARY FAILURE'
+      when 41
+        header_hash[:status_text] = 'SERVER UNAVAILABLE'
+      when 42
+        header_hash[:status_text] = 'CGI ERROR'
+      when 43
+        header_hash[:status_text] = 'PROXY ERROR'
+      when 44
+        header_hash[:status_text] = 'SLOW DOWN'
+      when 50
+        header_hash[:status_text] = 'PERMANENT FAILURE'
+      when 52
+        header_hash[:status_text] = 'GONE'
+      when 53
+        header_hash[:status_text] = 'PROXY REQUEST REFUSED'
+      when 59
+        header_hash[:status_text] = 'BAD REQUEST'
+      when 60
+        header_hash[:status_text] = 'CLIENT CERTIFICATE REQUIRED'
+      when 61
+        header_hash[:status_text] = 'CERTIFICATE NOT AURTHORISED'
+      when 62
+        header_hash[:status_text] = 'CERTIFICATE NOT VALID'
+      else
+        header_hash[:status_text] = 'UNKNOWN STATUS CODE'
+      end
+      if header_bits.length > 1
+        mime = header_bits[1].downcase.chomp(';')
+        header_hash[:mime] = mime
+        if mime == 'text/gemini'
+          if header_bits.length > 2
+            header_hash[:langs] = header_bits[2].split('=')[1].split(',')
+          else
+            header_hash[:langs] = ['UTF-8']
+          end
+        end
+      end
+      return header_hash
+    end
+
+    def process_gemini(content)
+    end
+  end
+end

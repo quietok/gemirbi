@@ -1,0 +1,42 @@
+module Gemini
+  class TofuDB
+
+    attr_accessor :DB, :path
+
+    def initialize(path)
+      if File.exists? path
+        self.DB = YAML.load_file(path)
+      else
+        self.DB = {}
+      end
+      self.path = path
+    end
+    
+    def check_tofu(uri, cert)
+      self.DB[uri] = {
+        :public_key => cert.public_key, 
+        :valid_on => cert.not_before,
+        :expires => cert.not_after
+      }
+      puts cert.subject
+      #puts cert.digest
+      puts cert.private_key
+      puts self.DB[uri][:public_key]
+      puts self.DB[uri][:valid_on]
+      puts self.DB[uri][:expires]
+      return true
+    end
+
+    def add_tofu(cert)
+    end
+    
+    def remove_tofu(name)
+    end
+
+    def close
+    end
+    
+  end
+  
+end
+
