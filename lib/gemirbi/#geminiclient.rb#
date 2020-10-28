@@ -4,6 +4,7 @@
 #redirects
 #sub request
 #input queries
+#link processing
 
 module Gemini
   class GeminiClient
@@ -27,7 +28,7 @@ module Gemini
       cert = ssl_socket.peer_cert
       subjectbits = cert.subject.to_s.split('/').reject { |mstr| mstr.empty? }.map { |nstr| nstr.split('=') }.to_h
       issuerbits = cert.issuer.to_s.split('/').reject { |mstr| mstr.empty? }.map { |nstr| nstr.split('=') }.to_h
-      if subjectbits['CN'] == issuerbits['CN']
+      unless subjectbits['CN'] == issuerbits['CN']
         puts 'in tofu part'
         indb = self.tofu_db.check_tofu(uri, cert)
         if indb
@@ -54,20 +55,20 @@ module Gemini
       if success
         self.certs.append(ssl_socket.peer_cert)
         self.sockets.append(ssl_socket)
-        socketn = self.sockets.size-1
+        socket = sockets.size-1
         puts status
       else
         puts 'SSL Error'
         puts status
       end
-      return success, socketn
+      return success, socket
     end
 
-    def send_request(uri, socketn)
+    def send_request(uri, socket)
       ## check ssl contexts, for sockets and urls
-      self.sockets[socketn].connect()
-      self.sockets[socketn].puts "gemini://#{uri}/\r\n"
-      data = self.sockets[socketn].readlines
+      self.sockets[socket].connect()
+      self.sockets[socket].puts "gemini://#{uri}/\r\n"
+      data = sockets[socket].readlines
       header = data.slice!(0)
       content = data
       return header, content
