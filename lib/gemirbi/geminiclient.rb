@@ -7,22 +7,77 @@
 
 module Gemini
   class GeminiClient
-    attr_accessor :tofu_db, :document, :ssl_context, :sockets, :certs
+    attr_accessor :tofu_db, :document, :ssl_contexts, :sockets, :certs, :ca_file_path
     
-    def initialize(ca_file='/usr/local/etc/ssl/cert.pem', tofu_path='/usr/home/mouse/.gemini/tofudb.yml', verify_function)
-      self.ssl_context = OpenSSL::SSL::SSLContext.new
-      self.ssl_context.ca_file = ca_file
+    def initialize(ca_file_path='/usr/local/etc/ssl/cert.pem', tofu_path='/usr/home/mouse/.gemini/tofudb.yml', root_ca_path='/usr/mouse/.gemini/root.pem', verify_function)
+      #self.ssl_context = OpenSSL::SSL::SSLContext.new
+      self.ca_file_path = ca_file_path
       self.sockets = []
+      self.ssl_contexts = []
       self.certs = []
       self.tofu_db = Gemini::TofuDB.new tofu_path, verify_function
     end
 
-    def set_socket_context(socket, context)
+    def generate_client_root_ca
+      root_key = OpenSSL::PKey::RSA.new 2048
+      root_ca = OpenSSL::X509::Certificate.new
+      root_ca.version = 2
+      root_ca.serial = 1
+      root_ca.subject = OpenSSL::X509::Name.parse "/DC=#{self.cdc[0]}/DC=#{self.cdc[1]}/CN=#{self.cn}"
+      root_ca.issuer = root_ca.subject
+      root_ca.not_before = Time.now
+      root_ca.not_after = root_ca.not_before + self.ca_length
+      ef = OpenSSL::X509::ExtensionFactory.new
+      ef.subject_certificate = root_ca
+      ef.issuer_certificate = root_ca
+      root_ca.add_extension(ef.create_extension("basicConstraints","CA:TRUE",true))
+      root_ca.add_extension(ef.create_extension("keyUsage","keyCertSign, cRLSign", true))
+      root_ca.add_extension(ef.create_extension("subjectKeyIdentifier","hash",false))
+      root_ca.add_extension(ef.create_extension("authorityKeyIdentifier","keyid:always",false))
+      root_ca.sign(root_key, OpenSSL::Digest::SHA256.new)
+      self.root_ca = root_ca
+      return true
+    end
+
+    def create_ssl_context
+      posistion = self.ssl_contexts.size
+      self.ssl_contexts[posistion] = OpenSSL::SSL::SSLContext.new
+      self.ssl_contexts[posistion].ca_file = self.ca_file_path
+      return posistion
+    end
+
+    def generate_client_key(socket, dc, cn)
+      key = OpenSSL::PKey::RSA.new 2048
+      cert = OpenSSL::X509::Certificate.new
+      cert.version = 2
+      cert.serial = 2
+      cert.subject = OpenSSL::X509::Name.parse "/DC=#{dc[0]}/DC=#{dc[1]}/CN=Ruby certificate"
+      cert.issuer = root_ca.subject # root CA is the issuer
+      cert.public_key = key.public_key
+      cert.not_before = Time.now
+      cert.not_after = cert.not_before + 1 * 365 * 24 * 60 * 60 # 1 years validity
+      ef = OpenSSL::X509::ExtensionFactory.new
+      ef.subject_certificate = cert
+      ef.issuer_certificate = root_ca
+      cert.add_extension(ef.create_extension("keyUsage","digitalSignature", true))
+      cert.add_extension(ef.create_extension("subjectKeyIdentifier","hash",false))
+      cert.sign(root_key, OpenSSL::Digest::SHA256.new)
+      return cert
+    end
+
+    def add_client_key(socket,cert)
+      
+    end
+
+    def send_input(site_path, input_data, socket)
+      ready_input = URI.encode_www_form_component(input_data).gsub('+','%20')
+      return self.send_request site_path + '?' + ready_input, socket
     end
     
     def establish_connection(uri, port)
       socket = TCPSocket.new(uri, port)
-      ssl_socket = OpenSSL::SSL::SSLSocket.new(socket, self.ssl_context)
+      ssl_context = create_ssl_context
+      ssl_socket = OpenSSL::SSL::SSLSocket.new(socket, self.ssl_contexts[ssl_context])
       ssl_socket.connect
       cert = ssl_socket.peer_cert
       subjectbits = cert.subject.to_s.split('/').reject { |mstr| mstr.empty? }.map { |nstr| nstr.split('=') }.to_h
@@ -66,7 +121,7 @@ module Gemini
     def send_request(uri, socketn)
       ## check ssl contexts, for sockets and urls
       self.sockets[socketn].connect()
-      self.sockets[socketn].puts "gemini://#{uri}/\r\n"
+      self.sockets[socketn].puts "gemini://#{uri}\r\n"
       data = self.sockets[socketn].readlines
       header = data.slice!(0)
       content = data
