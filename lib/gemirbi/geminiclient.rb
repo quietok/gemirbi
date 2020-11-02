@@ -18,6 +18,7 @@ module Gemini
       self.tofu_db = Gemini::TofuDB.new tofu_path, verify_function
     end
 
+    
     def generate_client_root_ca
       root_key = OpenSSL::PKey::RSA.new 2048
       root_ca = OpenSSL::X509::Certificate.new
